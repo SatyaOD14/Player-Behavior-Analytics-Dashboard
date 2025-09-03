@@ -1,0 +1,126 @@
+# player_dashboard_v4.py
+import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+import plotly.express as px
+
+st.set_page_config(page_title="Player Behavior Analytics Dashboard", layout="wide")
+st.title("🎮 Player Behavior Analytics Dashboard")
+
+# -------------------------------
+# 1. Generate dummy player data
+# -------------------------------
+np.random.seed(42)
+num_players = 1000
+data = pd.DataFrame({
+    'player_id': range(1, num_players + 1),
+    'days_active': np.random.randint(1, 100, num_players),
+    'last_login_days_ago': np.random.randint(0, 30, num_players),
+    'total_spent': np.round(np.random.uniform(0, 500, num_players), 2),
+    'sessions_per_week': np.random.randint(1, 20, num_players),
+})
+
+data['churned'] = data['last_login_days_ago'].apply(lambda x: 1 if x > 7 else 0)
+
+# -------------------------------
+# 2. DAU / MAU Metrics
+# -------------------------------
+st.subheader("📊 DAU / MAU Metrics")
+DAU = (data['last_login_days_ago'] <= 1).sum()
+MAU = (data['last_login_days_ago'] <= 30).sum()
+st.metric("Daily Active Users (DAU)", DAU)
+st.metric("Monthly Active Users (MAU)", MAU)
+st.metric("DAU/MAU Ratio", f"{DAU/MAU:.2%}")
+
+# DAU trend chart
+data['login_day'] = np.random.randint(1, 31, num_players)
+dau_trend = data.groupby('login_day').size().reset_index(name='DAU')
+fig_dau = px.line(dau_trend, x='login_day', y='DAU', title="DAU Trend Over 30 Days")
+st.plotly_chart(fig_dau, use_container_width=True)
+
+# -------------------------------
+# 3. Monetization Insights
+# -------------------------------
+st.subheader("💰 Monetization Insights")
+total_revenue = data['total_spent'].sum()
+avg_revenue = data['total_spent'].mean()
+st.metric("Total Revenue ($)", f"{total_revenue:.2f}")
+st.metric("Average Revenue per Player ($)", f"{avg_revenue:.2f}")
+
+fig_revenue = px.histogram(data, x='total_spent', nbins=30, title="Player Spending Distribution")
+st.plotly_chart(fig_revenue, use_container_width=True)
+
+# -------------------------------
+# 4. Churn Prediction Model
+# -------------------------------
+st.subheader("📉 Churn Prediction")
+features = ['days_active', 'last_login_days_ago', 'total_spent', 'sessions_per_week']
+X = data[features]
+y = data['churned']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+st.write(f"Churn Prediction Accuracy: **{accuracy:.2%}**")
+
+# Churn probability & top-risk players
+data['churn_prob'] = model.predict_proba(X)[:,1]
+top_risk_players = data.sort_values('churn_prob', ascending=False).head(10)
+st.write("Top 10 High-Risk Players")
+st.dataframe(top_risk_players[['player_id', 'churn_prob', 'days_active', 'total_spent']])
+
+# Churn distribution chart
+fig_churn = px.pie(data, names='churned', title='Churn vs Active Players', color='churned',
+                   color_discrete_map={0: 'green', 1: 'red'})
+st.plotly_chart(fig_churn, use_container_width=True)
+
+# -------------------------------
+# 5. Leaderboards
+# -------------------------------
+st.subheader("🏆 Player Leaderboards")
+
+col1, col2 = st.columns(2)
+
+# Top Spenders
+with col1:
+    st.markdown("**Top 10 Spenders**")
+    top_spenders = data.sort_values('total_spent', ascending=False).head(10)
+    st.dataframe(top_spenders[['player_id', 'total_spent', 'days_active']])
+    fig_top_spenders = px.bar(top_spenders, x='player_id', y='total_spent', color='total_spent',
+                              title="Top 10 Player Spending")
+    st.plotly_chart(fig_top_spenders, use_container_width=True)
+
+# Most Active Players
+with col2:
+    st.markdown("**Top 10 Most Active Players**")
+    top_active = data.sort_values('days_active', ascending=False).head(10)
+    st.dataframe(top_active[['player_id', 'days_active', 'total_spent']])
+    fig_top_active = px.bar(top_active, x='player_id', y='days_active', color='days_active',
+                            title="Top 10 Most Active Players")
+    st.plotly_chart(fig_top_active, use_container_width=True)
+
+# -------------------------------
+# 6. Interactive Player Churn Predictor
+# -------------------------------
+st.sidebar.header("Predict Churn for a Player")
+st.sidebar.markdown("Adjust the player stats below to see churn probability:")
+
+days_active = st.sidebar.slider("Days Active", 1, 100, 50)
+last_login_days_ago = st.sidebar.slider("Last Login Days Ago", 0, 30, 5)
+total_spent = st.sidebar.slider("Total Spent ($)", 0, 500, 100)
+sessions_per_week = st.sidebar.slider("Sessions per Week", 1, 20, 5)
+
+player_input = pd.DataFrame({
+    'days_active': [days_active],
+    'last_login_days_ago': [last_login_days_ago],
+    'total_spent': [total_spent],
+    'sessions_per_week': [sessions_per_week]
+})
+
+churn_prob = model.predict_proba(player_input)[:,1][0]
+st.sidebar.markdown(f"**Predicted Churn Probability:** {churn_prob:.2%}")
